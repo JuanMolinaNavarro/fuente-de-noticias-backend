@@ -1,0 +1,21 @@
+# dependencias y build
+node_modules/
+dist/
+
+# entorno — los secretos NUNCA van al repo (lección aprendida del frontend)
+.env
+.env.*
+!.env.example
+
+# logs y cobertura
+*.log
+coverage/
+
+# IDE / SO
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Biblioteca de medios en disco local (dev)
+uploads/
