@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { seconds, Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { ChangePasswordDto } from '../users/dto/user.dto';
 import { UsersService } from '../users/users.service';
@@ -25,6 +26,7 @@ export class AuthController {
   // Límite estricto contra fuerza bruta: 5 intentos por minuto por IP.
   // Con esto, probar un diccionario de contraseñas pasa de minutos a años;
   // el 6º intento en la ventana recibe 429 Too Many Requests.
+  @Public()
   @Throttle({ default: { limit: 5, ttl: seconds(60) } })
   @Post('login')
   login(@Body() dto: LoginDto) {
@@ -50,6 +52,10 @@ export class AuthController {
     await this.users.revokeSessions(user.id);
   }
 
+  // Verifica la clave ACTUAL con bcrypt: sin este límite, una sesión
+  // secuestrada tendría 100 intentos/min (el global) para adivinarla.
+  // Mismo 5/min que el login.
+  @Throttle({ default: { limit: 5, ttl: seconds(60) } })
   @UseGuards(JwtAuthGuard)
   @Post('change-password')
   @HttpCode(204)

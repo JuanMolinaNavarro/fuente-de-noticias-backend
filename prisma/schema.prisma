@@ -39,6 +39,8 @@ model Feed {
   // Categoría fija para feeds de sección que no traen <category>
   category   Category? @relation(fields: [categoryId], references: [id])
   categoryId String?
+
+  @@index([categoryId])
 }
 
 /// Guids de items RSS cuyo artículo fue purgado por el cron de limpieza: el
@@ -192,6 +194,10 @@ model Article {
   @@index([createdById, status])
   @@index([status, scheduledAt])
   @@index([status, fetchedAt])
+  // El listado público por sección filtra categoryId + status y ordena por
+  // publishedAt: sin este índice, Postgres recorre por status y descarta
+  // por categoría en memoria (Prisma NO indexa las FK solo).
+  @@index([categoryId, status, publishedAt])
 }
 
 // Material original del feed: referencia y atribución. Nunca se edita por API.
@@ -226,6 +232,8 @@ model ArticleTag {
   tagId     String
 
   @@id([articleId, tagId])
+  // La PK compuesta empieza por articleId: no sirve para buscar por tag.
+  @@index([tagId])
 }
 
 // Firma pública de la nota (N autores, con orden). Distinto de createdBy.
@@ -349,6 +357,8 @@ model Media {
   featuredIn Article[]
 
   @@index([createdAt])
+  // La cuota por usuario suma sizeBytes filtrando por uploadedById.
+  @@index([uploadedById])
 }
 
 // ── Portada curada ──────────────────────────────────────────────────────

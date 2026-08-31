@@ -6,6 +6,9 @@ export class PageQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  // Techo: sin él, ?page=50000000 fuerza un OFFSET gigante que Postgres
+  // resuelve escaneando la tabla completa — un DoS barato por request.
+  @Max(1000)
   page: number = 1;
 
   @IsOptional()

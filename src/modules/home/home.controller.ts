@@ -10,6 +10,7 @@ import {
 import { HomeZone } from '@prisma/client';
 import { ArrayMaxSize, IsArray, IsEnum, IsString } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -27,6 +28,7 @@ export class SetSlotsDto {
 }
 
 /** Portada pública: una sola llamada para toda la home. */
+@Public()
 @Controller('home')
 export class HomeController {
   constructor(private readonly home: HomeService) {}

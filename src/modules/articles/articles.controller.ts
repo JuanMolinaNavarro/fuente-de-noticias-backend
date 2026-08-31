@@ -6,9 +6,13 @@ import {
   ParseIntPipe,
   Query,
 } from '@nestjs/common';
+import { Public } from '../../common/decorators/public.decorator';
 import { ArticlesService } from './articles.service';
 import { ArticleQueryDto } from './dto/article-query.dto';
 
+/** Público: notas publicadas y vista previa (que valida su propio token JWT
+ *  de audiencia "preview" en el service, no el de sesión). */
+@Public()
 @Controller('articles')
 export class ArticlesController {
   constructor(private readonly articles: ArticlesService) {}

@@ -4,6 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { seconds, ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { validateEnv } from './config/env.validation';
+import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { HomeModule } from './modules/home/home.module';
 import { HealthController } from './health/health.controller';
 import { AdminArticlesModule } from './modules/admin-articles/admin-articles.module';
@@ -50,6 +51,10 @@ import { PrismaModule } from './prisma/prisma.module';
     // recordar ponerlo en cada controller (los olvidos son la fuente típica
     // de agujeros). Se exceptúa con @SkipThrottle donde corresponde.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Autenticación con el mismo criterio: TODO endpoint exige token salvo
+    // que esté marcado @Public(). El default es "cerrado" — un controller
+    // nuevo sin decorador no puede quedar abierto por olvido.
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })
 export class AppModule {}

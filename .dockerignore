@@ -8,6 +8,9 @@ uploads
 test
 .env
 .env.*
+# El historial completo del repo no pinta nada en la imagen — y la etapa
+# "build" NO es descartable: la usa el servicio migrate del compose.
+.git
 *.md
 .playwright-mcp
 Dockerfile

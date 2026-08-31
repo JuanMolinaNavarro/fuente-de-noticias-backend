@@ -8,6 +8,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { seconds, Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -51,6 +52,10 @@ export class UsersController {
     return this.users.update(id, dto, actor.id);
   }
 
+  // Mismo límite que el login: aunque exige rol ADMIN, es un endpoint que
+  // escribe contraseñas — 100/min (el global) sería un regalo para una
+  // sesión de admin secuestrada.
+  @Throttle({ default: { limit: 5, ttl: seconds(60) } })
   @Roles('ADMIN')
   @Post(':id/password')
   @HttpCode(204)

@@ -1,10 +1,12 @@
 import { Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { MarketService } from './market.service';
 
 /** Público: lo consume la home vía el BFF de Next. */
+@Public()
 @Controller('market')
 export class MarketController {
   constructor(private readonly market: MarketService) {}

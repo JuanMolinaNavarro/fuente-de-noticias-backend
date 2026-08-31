@@ -7,6 +7,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -14,6 +15,7 @@ import { CategoriesService } from './categories.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 
 /** Público: el nav del frontend arma las secciones desde acá. */
+@Public()
 @Controller('categories')
 export class CategoriesController {
   constructor(private readonly categories: CategoriesService) {}

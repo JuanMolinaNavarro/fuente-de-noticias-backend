@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Un chequeo de DB exitoso vale por este lapso: /health es público y cada
@@ -9,6 +10,7 @@ const DB_CHECK_TTL_MS = 5_000;
 
 // Sin @SkipThrottle: el límite global (100 req/min/IP) también aplica acá.
 // El healthcheck de Docker (4 req/min desde localhost) entra holgado.
+@Public()
 @Controller('health')
 export class HealthController {
   private lastDbOkAt = 0;

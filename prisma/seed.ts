@@ -45,29 +45,40 @@ async function seedAdmin() {
   return admin;
 }
 
+/** Cuenta demo: create-if-missing, el MISMO criterio que el admin — un
+ *  upsert con update de passwordHash restauraría la clave conocida y
+ *  reactivaría la cuenta en cada corrida. */
+async function demoUser(email: string, name: string, role: 'EDITOR' | 'REDACTOR', passwordHash: string) {
+  const existente = await prisma.user.findUnique({ where: { email } });
+  if (existente) {
+    console.log(`Usuario demo ya existe (${email}): no se modifica.`);
+    return existente;
+  }
+  return prisma.user.create({ data: { email, passwordHash, name, role } });
+}
+
 /** Usuarios de prueba, uno por rol (contraseña = 'demo_2026' para ambos). */
 async function seedDemoUsers() {
+  // Cuentas con contraseña PÚBLICA (está en este archivo): jamás en la base
+  // de producción. El seed normal (sin --demo) no pasa por acá.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'El seed --demo crea cuentas con contraseña conocida: bloqueado en producción.',
+    );
+  }
   const passwordHash = await bcrypt.hash('demo_2026', 10);
-  const editor = await prisma.user.upsert({
-    where: { email: 'editor@fuentedenoticias.com.ar' },
-    update: { passwordHash, role: 'EDITOR', isActive: true },
-    create: {
-      email: 'editor@fuentedenoticias.com.ar',
-      passwordHash,
-      name: 'Elena Editora',
-      role: 'EDITOR',
-    },
-  });
-  const redactor = await prisma.user.upsert({
-    where: { email: 'redactor@fuentedenoticias.com.ar' },
-    update: { passwordHash, role: 'REDACTOR', isActive: true },
-    create: {
-      email: 'redactor@fuentedenoticias.com.ar',
-      passwordHash,
-      name: 'Ramiro Redactor',
-      role: 'REDACTOR',
-    },
-  });
+  const editor = await demoUser(
+    'editor@fuentedenoticias.com.ar',
+    'Elena Editora',
+    'EDITOR',
+    passwordHash,
+  );
+  const redactor = await demoUser(
+    'redactor@fuentedenoticias.com.ar',
+    'Ramiro Redactor',
+    'REDACTOR',
+    passwordHash,
+  );
   console.log('Usuarios demo listos: editor@ y redactor@ (clave demo_2026)');
   return { editor, redactor };
 }
