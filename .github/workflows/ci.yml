@@ -1,0 +1,55 @@
+# CI del backend: lint + build + unit + e2e contra un Postgres real.
+# Corre en cada push y PR a main. Es la puerta de calidad: si esto está
+# rojo, no se despliega.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      # Los e2e apuntan a localhost:5433 con estas credenciales de test
+      # (hardcodeadas en test/test-db.ts — base descartable, no secretos).
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: frente
+          POSTGRES_PASSWORD: frente_dev_2026
+          POSTGRES_DB: frente_noticias_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U frente"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # La validación Zod del entorno exige estas variables al bootear la app
+      # en los tests. Valores de CI, sin ningún poder fuera de este job.
+      DATABASE_URL: postgresql://frente:frente_dev_2026@localhost:5433/frente_noticias_test
+      JWT_SECRET: ci-secret-solo-para-tests-0000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run build
+
+      - run: npm test
+
+      - run: npm run test:e2e
