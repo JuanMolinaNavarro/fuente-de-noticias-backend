@@ -365,7 +365,12 @@ export class AdminArticlesService {
   // El historial es legible por cualquier rol: decisión EXPLÍCITA (view=true
   // para todos en article-policy), no un permiso olvidado. Si algún día el
   // historial debe restringirse, se cambia la política, no estos métodos.
-  async listRevisions(id: string, page: number, limit: number, actor: AuthUser) {
+  async listRevisions(
+    id: string,
+    page: number,
+    limit: number,
+    actor: AuthUser,
+  ) {
     const article = await this.getById(id);
     this.runDomain(() => assertCan('view', actor, article));
     const { data, total } = await this.revisions.list(id, page, limit);
@@ -575,7 +580,8 @@ export class AdminArticlesService {
     if (dto.isBreaking !== undefined) {
       data.isBreaking = dto.isBreaking;
       // Sello de entrada a Última hora: base del FIFO del cupo (rotateBreaking)
-      if (dto.isBreaking && !article.isBreaking) data.breakingSince = new Date();
+      if (dto.isBreaking && !article.isBreaking)
+        data.breakingSince = new Date();
       // Desmarcar limpia todo: sin flag no queda ni sello ni vencimiento
       if (!dto.isBreaking) {
         data.breakingSince = null;

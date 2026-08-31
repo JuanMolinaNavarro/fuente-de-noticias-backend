@@ -71,12 +71,7 @@ describe('Cupo FIFO de Última hora (e2e)', () => {
       orderBy: { title: 'asc' },
       select: { title: true, isBreaking: true, breakingSince: true },
     });
-    expect(estados.map((e) => e.isBreaking)).toEqual([
-      false,
-      true,
-      true,
-      true,
-    ]);
+    expect(estados.map((e) => e.isBreaking)).toEqual([false, true, true, true]);
     expect(estados[0].breakingSince).toBeNull();
 
     // La salida queda auditada como acción del sistema

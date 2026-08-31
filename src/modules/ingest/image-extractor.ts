@@ -93,7 +93,9 @@ export class ImageExtractor {
       const ips = isIP(host)
         ? [{ address: host }]
         : await lookup(host, { all: true });
-      return ips.length > 0 && ips.every(({ address }) => this.esIpPublica(address));
+      return (
+        ips.length > 0 && ips.every(({ address }) => this.esIpPublica(address))
+      );
     } catch {
       return false; // no resuelve → no se fetchea
     }

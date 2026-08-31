@@ -9,6 +9,11 @@ import { IngestService } from './ingest.service';
 @Module({
   imports: [FeedsModule],
   controllers: [IngestController],
-  providers: [IngestService, IngestScheduler, FeedParserAdapter, ImageExtractor],
+  providers: [
+    IngestService,
+    IngestScheduler,
+    FeedParserAdapter,
+    ImageExtractor,
+  ],
 })
 export class IngestModule {}

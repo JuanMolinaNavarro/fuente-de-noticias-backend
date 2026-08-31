@@ -45,7 +45,9 @@ describe('Roles sobre el catálogo de secciones (e2e)', () => {
       .get('/api/v1/admin/categories')
       .set(as(editor))
       .expect(200);
-    expect(lista.body.some((c: { slug: string }) => c.slug === 'espectaculos')).toBe(true);
+    expect(
+      lista.body.some((c: { slug: string }) => c.slug === 'espectaculos'),
+    ).toBe(true);
 
     await request(app.getHttpServer())
       .patch(`/api/v1/admin/categories/${creada.body.id}`)

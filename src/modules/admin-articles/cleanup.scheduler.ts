@@ -90,7 +90,11 @@ export class CleanupScheduler {
       entityId: 'purge',
       action: 'purgeStaleDrafts',
       userId: null,
-      diff: { count: ids.length, ttlHours: this.ttlHours, ids: ids.slice(0, 50) },
+      diff: {
+        count: ids.length,
+        ttlHours: this.ttlHours,
+        ids: ids.slice(0, 50),
+      },
     });
 
     return ids.length;

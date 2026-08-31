@@ -84,10 +84,7 @@ export class IngestService {
     // comparación va sin tildes ni mayúsculas: el categorizer dice
     // "Tucumán" pero la tabla guarda "Tucuman".
     const normalizar = (s: string) =>
-      s
-        .normalize('NFD')
-        .replace(/\p{M}/gu, '')
-        .toLowerCase();
+      s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
     const categorias = await this.prisma.category.findMany();
     const idPorNombre = new Map(
       categorias.map((c) => [normalizar(c.name), c.id]),

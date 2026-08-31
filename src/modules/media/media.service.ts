@@ -183,9 +183,7 @@ export class MediaService {
     // Binarios al final: si el delete de la fila falla, no queda una ficha
     // apuntando a archivos ya borrados. La miniatura comparte base de clave.
     await this.storage.remove(media.storageKey);
-    await this.storage.remove(
-      media.storageKey.replace(/\.webp$/, '-sm.webp'),
-    );
+    await this.storage.remove(media.storageKey.replace(/\.webp$/, '-sm.webp'));
     await this.audit.log({
       entity: 'media',
       entityId: id,

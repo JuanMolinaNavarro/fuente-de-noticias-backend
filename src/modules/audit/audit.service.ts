@@ -3,8 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export interface AuditEntry {
-  entity:
-    'article' | 'user' | 'feed' | 'category' | 'media' | 'home';
+  entity: 'article' | 'user' | 'feed' | 'category' | 'media' | 'home';
   entityId: string;
   action: string;
   userId?: string | null;
