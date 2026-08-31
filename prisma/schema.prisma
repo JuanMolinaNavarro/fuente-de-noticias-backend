@@ -1,0 +1,390 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Roles de la redacción (de mayor a menor privilegio):
+//   ADMIN    -> además de editar y publicar, gestiona usuarios, feeds
+//               y categorías
+//   EDITOR   -> revisa, edita cualquier nota, publica/despublica
+//   REDACTOR -> crea y edita SUS notas en borrador y las envía a revisión
+enum Role {
+  ADMIN
+  EDITOR
+  REDACTOR
+}
+
+model Category {
+  id    String  @id @default(cuid())
+  name  String  @unique
+  slug  String  @unique
+  color String // hex del manual de identidad
+  order Int     @default(0) // posición en nav/listados
+  inNav Boolean @default(false) // aparece en la barra de secciones
+
+  articles Article[]
+  feeds    Feed[]
+}
+
+// Feeds RSS a ingerir (antes: env var RSS_FEEDS con formato "url|Categoría")
+model Feed {
+  id      String  @id @default(cuid())
+  url     String  @unique
+  enabled Boolean @default(true)
+
+  // Categoría fija para feeds de sección que no traen <category>
+  category   Category? @relation(fields: [categoryId], references: [id])
+  categoryId String?
+}
+
+/// Guids de items RSS cuyo artículo fue purgado por el cron de limpieza: el
+/// dedup de la ingesta los consulta para no re-crear la misma noticia
+/// mientras siga apareciendo en el feed.
+model IngestTombstone {
+  id        String   @id @default(cuid())
+  guid      String   @unique
+  feedUrl   String
+  title     String?
+  deletedAt DateTime @default(now())
+
+  @@index([deletedAt])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String // bcrypt — jamás se guarda la password en claro
+  name         String
+  role         Role     @default(REDACTOR)
+  // Baja lógica: un usuario desactivado no puede loguearse ni usar tokens
+  // vigentes (JwtStrategy lo consulta en cada request). No se borra para
+  // no romper la trazabilidad (revisiones, auditoría, firmas).
+  isActive     Boolean  @default(true)
+  // Revocación de sesiones: los JWT emitidos ANTES de este instante no valen
+  // (JwtStrategy compara contra el claim iat). Se actualiza al cerrar sesión
+  // y al cambiar/blanquear la contraseña: un token robado muere ahí, no
+  // recién cuando expira solo a las 12 h.
+  tokensRevokedAt DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  reviewed     Article[]           @relation("ReviewedBy")
+  created      Article[]           @relation("CreatedBy")
+  edited       Article[]           @relation("LastEditedBy")
+  bylines      ArticleAuthor[]
+  revisions    ArticleRevision[]
+  audit        AuditLog[]
+  media        Media[]
+  homeVersions HomeLayoutVersion[]
+}
+
+// Estados del flujo editorial (ver src/domain/article-state.ts):
+//   INGESTED  -> llegó del RSS, todavía sin borrador
+//   DRAFT     -> borrador (con el material del feed o escrito a mano), editable
+//   IN_REVIEW -> el redactor lo envió a revisión; espera a un editor
+//   SCHEDULED -> aprobado, sale solo cuando llegue scheduledAt (cron)
+//   PUBLISHED -> visible en el sitio público
+//   SPIKED    -> descartado ("papelera blanda", se puede restaurar)
+// El orden de declaración = orden físico en Postgres (RENAME VALUE + ADD VALUE
+// ... AFTER en la migración rename_article_status_values); no reordenar.
+enum ArticleStatus {
+  INGESTED
+  DRAFT
+  IN_REVIEW
+  SCHEDULED
+  PUBLISHED
+  SPIKED
+}
+
+// De dónde salió la nota:
+//   FEED     -> ingesta RSS; tiene ArticleSource; el borrador nace del material del feed
+//   ORIGINAL -> escrita desde cero por un redactor; no tiene ArticleSource
+enum ArticleOrigin {
+  FEED
+  ORIGINAL
+}
+
+// Por qué se guardó una revisión (snapshot) del artículo
+enum RevisionReason {
+  AUTOSAVE // guardado normal (se agrupa: máx. una cada 10 min por usuario)
+  MANUAL // el usuario pidió "guardar versión"
+  SUBMIT
+  PUBLISH
+  UNPUBLISH
+  CORRECTION // edición sobre una nota ya publicada
+  RESTORE // se restauró una revisión anterior
+}
+
+// El artículo es un documento editorial. Lo que vino del feed (si vino) vive
+// aparte en ArticleSource: así una nota original no necesita datos ficticios
+// y el material fuente (hasta 8 KB) no pesa en cada listado de la bandeja.
+model Article {
+  id     String        @id @default(cuid())
+  origin ArticleOrigin @default(FEED)
+  status ArticleStatus @default(DRAFT)
+
+  source ArticleSource? // sólo cuando origin = FEED
+
+  // Titulación (terminología argentina): volanta / título / bajada
+  kicker  String?
+  title   String?
+  summary String? @db.Text // bajada (o copete)
+
+  // Cuerpo. contentJson es la fuente de verdad (documento ProseMirror/Tiptap);
+  // content es el texto plano DERIVADO de él: sirve para búsqueda, cálculo
+  // de similaridad con la fuente y fallback de render.
+  contentJson Json?
+  content     String? @db.Text
+
+  // Clasificación (el sitio público filtra por categoryRef.slug o name)
+  categoryRef Category?       @relation(fields: [categoryId], references: [id])
+  categoryId  String?
+  tags        ArticleTag[]
+  authors     ArticleAuthor[] // firma pública (puede ser ≠ de quien la creó)
+
+  // Imagen destacada: Media propia (featuredMedia) o, como legado/excepción,
+  // una URL externa con licencia (imageUrl). El DTO público expone una sola.
+  imageUrl        String?
+  featuredMedia   Media?  @relation(fields: [featuredMediaId], references: [id])
+  featuredMediaId String?
+
+  // SEO y redes
+  seoTitle       String?
+  seoDescription String?
+  socialTitle    String?
+  slug           String? @unique
+
+  // Editorial
+  isBreaking    Boolean   @default(false)
+  breakingUntil DateTime?
+  breakingSince DateTime? // cuándo entró a Última hora: base del FIFO del cupo
+  scheduledAt   DateTime? // publicación programada (estado SCHEDULED)
+  reviewNote    String?   @db.Text // motivo con el que el editor devolvió la nota
+
+  // Similitud con el material de la fuente (se muestra como advertencia editorial)
+  sourceSimilarity Float? // 0..1, containment de 5-gramas contra la fuente
+
+  // Fechas
+  fetchedAt        DateTime  @default(now()) // llegada del feed / creación
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @default(now()) @updatedAt
+  publishedAt      DateTime? // última publicación (null si no está publicada)
+  firstPublishedAt DateTime? // primera vez que salió; no cambia al republicar
+  reviewedAt       DateTime?
+
+  // Personas
+  createdBy      User?   @relation("CreatedBy", fields: [createdById], references: [id])
+  createdById    String? // dueño: base de la regla "el redactor sólo edita lo suyo"
+  lastEditedBy   User?   @relation("LastEditedBy", fields: [lastEditedById], references: [id])
+  lastEditedById String?
+  reviewedBy     User?   @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  reviewedById   String? // último editor que publicó/devolvió/despublicó
+
+  revisions ArticleRevision[]
+  homeSlots HomeSlot[]
+
+  @@index([status, publishedAt])
+  @@index([status, updatedAt])
+  @@index([createdById, status])
+  @@index([status, scheduledAt])
+  @@index([status, fetchedAt])
+}
+
+// Material original del feed: referencia y atribución. Nunca se edita por API.
+model ArticleSource {
+  id        String  @id @default(cuid())
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  articleId String  @unique
+
+  guid       String @unique // GUID del feed, para deduplicar
+  feedUrl    String
+  sourceName String
+  sourceUrl  String // link a la nota original (atribución obligatoria)
+
+  originalTitle    String
+  originalContent  String  @db.Text
+  // Imagen que trae el feed. Solo referencia para el editor: NO se publica
+  // (las fotos de agencias tienen copyright).
+  originalImageUrl String?
+}
+
+model Tag {
+  id       String       @id @default(cuid())
+  name     String       @unique
+  slug     String       @unique
+  articles ArticleTag[]
+}
+
+model ArticleTag {
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  articleId String
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  tagId     String
+
+  @@id([articleId, tagId])
+}
+
+// Firma pública de la nota (N autores, con orden). Distinto de createdBy.
+model ArticleAuthor {
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  articleId String
+  user      User    @relation(fields: [userId], references: [id])
+  userId    String
+  order     Int     @default(0)
+
+  @@id([articleId, userId])
+}
+
+// Historial de versiones: snapshot JSON de los campos editables.
+// Se guarda como JSON y no como columnas para que agregar un campo al artículo
+// no obligue a migrar el historial (Arc XP guarda hasta 100 por nota).
+model ArticleRevision {
+  id        String  @id @default(cuid())
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  articleId String
+  version   Int
+
+  snapshot Json
+  reason   RevisionReason
+  note     String?
+
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@unique([articleId, version])
+  @@index([articleId, createdAt])
+}
+
+// Bitácora de acciones: quién hizo qué sobre qué entidad y qué cambió.
+model AuditLog {
+  id        String   @id @default(cuid())
+  entity    String // 'article' | 'user' | 'feed' | 'category' | ...
+  entityId  String
+  action    String // 'create' | 'update' | 'publish' | 'spike' | ...
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+  diff      Json?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ── Mercado: cotizaciones cacheadas ─────────────────────────────────────
+
+enum MarketIndicator {
+  DOLAR_OFICIAL
+  DOLAR_BLUE
+  DOLAR_MEP
+  DOLAR_CCL
+  DOLAR_MAYORISTA
+  DOLAR_CRIPTO
+  DOLAR_TARJETA
+  MERVAL
+  RIESGO_PAIS
+}
+
+// Serie temporal "append-only": cada corrida del cron inserta UNA fila por
+// indicador y nunca la modifica. Con eso podemos calcular la variación
+// contra "hace 24 h" y armar el mini-gráfico sin depender de que las APIs
+// externas ofrezcan histórico intradiario (no lo ofrecen).
+model MarketSnapshot {
+  id         String          @id @default(cuid())
+  indicator  MarketIndicator
+  // Valor principal: "venta" en los dólares, puntos en Merval y riesgo país.
+  value      Float
+  // Solo aplican a los dólares; en índices quedan en null.
+  buy        Float?
+  sell       Float?
+  source     String // 'dolarapi' | 'argentinadatos' | 'yahoo'
+  // Fecha que declara la fuente para el dato (puede ser vieja: fin de semana).
+  sourceAt   DateTime?
+  // Cuándo lo capturamos nosotros; es la referencia para la variación 24 h.
+  capturedAt DateTime        @default(now())
+
+  @@index([indicator, capturedAt])
+}
+
+// ── Biblioteca de medios ────────────────────────────────────────────────
+
+enum MediaKind {
+  IMAGE
+}
+
+// Un archivo subido por la redacción. Los binarios viven en el storage
+// (disco local en dev, S3/R2 en prod: ver MediaStoragePort); acá queda la
+// ficha: dónde está, qué es, y los metadatos editoriales (crédito, epígrafe,
+// alt). No se borra: una foto puede estar en N notas publicadas.
+model Media {
+  id         String    @id @default(cuid())
+  kind       MediaKind @default(IMAGE)
+  storageKey String    @unique // ruta/clave en el storage (sin host)
+  url        String // versión principal (webp ≤ 1600 px)
+  thumbUrl   String? // versión chica (webp ≤ 800 px) para tarjetas
+  mimeType   String
+  bytes      Int
+  width      Int?
+  height     Int?
+  // Metadatos editoriales: alt y epígrafe (caption). La columna credit quedó
+  // en desuso (la política dejó de pedir crédito); se conserva por los datos
+  // ya cargados, la app no la lee ni la escribe.
+  alt        String?
+  caption    String?   @db.Text
+  credit     String?
+  // Punto focal (0..1) para que los recortes de las tarjetas no dejen caras afuera
+  focalX     Float?
+  focalY     Float?
+
+  uploadedBy   User?    @relation(fields: [uploadedById], references: [id])
+  uploadedById String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  featuredIn Article[]
+
+  @@index([createdAt])
+}
+
+// ── Portada curada ──────────────────────────────────────────────────────
+
+// Zonas de la portada (los cupos viven en el código: 1 / 6 / 12)
+enum HomeZone {
+  PRINCIPAL
+  DESTACADAS
+  MAS_NOTICIAS
+}
+
+// El "borrador" de la portada: qué nota va en cada posición de cada zona.
+// Sólo lo ve el panel; el sitio público lee la última HomeLayoutVersion.
+// Una nota despublicada sigue pudiendo estar acá (se filtra al resolver).
+model HomeSlot {
+  id        String   @id @default(cuid())
+  zone      HomeZone
+  position  Int
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  articleId String
+  pinned    Boolean  @default(false) // "que no se mueva" (informativo para el curador)
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([zone, position])
+  @@index([articleId])
+}
+
+// Cada "Publicar portada" congela un snapshot [{zone, position, articleId}]:
+// el sitio sirve siempre la última versión publicada (no el borrador), se
+// puede volver a una anterior, y queda quién la publicó y cuándo.
+model HomeLayoutVersion {
+  id            String   @id @default(cuid())
+  snapshot      Json
+  publishedBy   User?    @relation(fields: [publishedById], references: [id])
+  publishedById String?
+  publishedAt   DateTime @default(now())
+
+  @@index([publishedAt])
+}

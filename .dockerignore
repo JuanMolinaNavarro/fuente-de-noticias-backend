@@ -1,0 +1,14 @@
+# Qué NO entra al contexto de build de Docker. Sin este archivo, COPY . .
+# arrastra todo: node_modules (se instalan adentro), builds viejos y — lo
+# grave — el .env con secretos, que quedaría en una capa de la imagen.
+node_modules
+dist
+coverage
+uploads
+test
+.env
+.env.*
+*.md
+.playwright-mcp
+Dockerfile
+.dockerignore
